@@ -274,6 +274,11 @@ void MPCNode::odomCB(const nav_msgs::Odometry::ConstPtr& odomMsg)
     
 }
 
+double getDistance(double x1, double y1, double x2, double y2)
+{
+    return sqrt(pow(x1-x2,2) + pow(y1-y2,2));
+}
+
 // CallBack: Update generated path (conversion to odom frame)
 void MPCNode::desiredPathCB(const nav_msgs::Path::ConstPtr& totalPathMsg)
 {
@@ -284,22 +289,24 @@ void MPCNode::desiredPathCB(const nav_msgs::Path::ConstPtr& totalPathMsg)
     _goal_reached = false;
     nav_msgs::Path mpc_path = nav_msgs::Path();   // For generating mpc reference path  
     geometry_msgs::PoseStamped tempPose;
-    nav_msgs::Odometry odom = _odom; 
+    nav_msgs::Odometry odom = _odom;
+
+    _goal_pos = totalPathMsg->poses.back().pose.position;
 
     try
     {
         double total_length = 0.0;
         //find waypoints distance
-        if(_waypointsDist <= 0.0)
-        {        
-            double gap_x = totalPathMsg->poses[1].pose.position.x - totalPathMsg->poses[0].pose.position.x;
-            double gap_y = totalPathMsg->poses[1].pose.position.y - totalPathMsg->poses[0].pose.position.y;
-            _waypointsDist = sqrt(gap_x*gap_x + gap_y*gap_y);             
-        }                       
+//        if(_waypointsDist <= 0.0)
+//        {
+//            double gap_x = totalPathMsg->poses[1].pose.position.x - totalPathMsg->poses[0].pose.position.x;
+//            double gap_y = totalPathMsg->poses[1].pose.position.y - totalPathMsg->poses[0].pose.position.y;
+//            _waypointsDist = sqrt(gap_x*gap_x + gap_y*gap_y);
+//        }
 
         // Find the nearst point for robot position
         
-        int min_val = 100; 
+        double min_val = 100;
 
         int N = totalPathMsg->poses.size(); // Number of waypoints        
         const double px = odom.pose.pose.position.x; //pose: odom frame
@@ -310,11 +317,11 @@ void MPCNode::desiredPathCB(const nav_msgs::Path::ConstPtr& totalPathMsg)
         double pre_yaw = 0;
         double roll, pitch, yaw = 0;
 
-        for(int i = min_idx; i < N; i++) 
+        for(int i = min_idx; i < N; i++)
         {
             dx = totalPathMsg->poses[i].pose.position.x - px;
             dy = totalPathMsg->poses[i].pose.position.y - py;
-                    
+
             tf::Quaternion q(
                 totalPathMsg->poses[i].pose.orientation.x,
                 totalPathMsg->poses[i].pose.orientation.y,
@@ -340,25 +347,30 @@ void MPCNode::desiredPathCB(const nav_msgs::Path::ConstPtr& totalPathMsg)
             if(total_length > _pathLength)
                 break;
             
-            _tf_listener.transformPose(_odom_frame, ros::Time(0) , 
-                                            totalPathMsg->poses[i], _odom_frame, tempPose);                     
-            mpc_path.poses.push_back(tempPose);                          
-            total_length = total_length + _waypointsDist;           
+//            _tf_listener.transformPose(_odom_frame, ros::Time(0) ,
+//                                            totalPathMsg->poses[i], _odom_frame, tempPose);
+            double dist = 0.0;
+            if (!mpc_path.poses.empty()) {
+                dist = hypot(mpc_path.poses.back().pose.position.x - totalPathMsg->poses[i].pose.position.x,
+                             mpc_path.poses.back().pose.position.y - totalPathMsg->poses[i].pose.position.y);
+            }
+            mpc_path.poses.push_back(totalPathMsg->poses[i]);
+            total_length = total_length + dist;
         }   
         
         // Connect the end of path to the front
-        if(total_length < _pathLength )
-        {
-            for(int i = 0; i < N ; i++)
-            {
-                if(total_length > _pathLength)                
-                    break;
-                _tf_listener.transformPose(_odom_frame, ros::Time(0) , 
-                                                totalPathMsg->poses[i], _odom_frame, tempPose);                     
-                mpc_path.poses.push_back(tempPose);                          
-                total_length = total_length + _waypointsDist;    
-            }
-        }  
+//        if(total_length < _pathLength )
+//        {
+//            for(int i = 0; i < N ; i++)
+//            {
+//                if(total_length > _pathLength)
+//                    break;
+//                _tf_listener.transformPose(_odom_frame, ros::Time(0) ,
+//                                                totalPathMsg->poses[i], _odom_frame, tempPose);
+//                mpc_path.poses.push_back(tempPose);
+//                total_length = total_length + _waypointsDist;
+//            }
+//        }
 
         if(mpc_path.poses.size() >= _pathLength )
         {
@@ -419,7 +431,27 @@ void MPCNode::amclCB(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& a
 
 // Timer: Control Loop (closed loop nonlinear MPC)
 void MPCNode::controlLoopCB(const ros::TimerEvent&)
-{          
+{
+    ros::Time begin = ros::Time::now();
+
+    if(_goal_received) {
+        double car2goal_x = _goal_pos.x - _odom.pose.pose.position.x;
+        double car2goal_y = _goal_pos.y - _odom.pose.pose.position.y;
+        double dist2goal = sqrt(car2goal_x*car2goal_x + car2goal_y*car2goal_y);
+        double deceleration = 0.6;
+        double deceleration_distance = _speed*_speed / (2*deceleration);
+        if (dist2goal<_goalRadius) {
+            _goal_received = false;
+            _goal_reached = true;
+            _path_computed = false;
+        }
+        else if(dist2goal < deceleration_distance) {
+            ROS_INFO("Goal Reached !");
+            _mpc_params["REF_V"] = 0.0;
+            _mpc.LoadParams(_mpc_params);
+        }
+    }
+
     if(_goal_received && !_goal_reached && _path_computed ) //received goal & goal not reached    
     {    
         nav_msgs::Odometry odom = _odom; 
@@ -571,8 +603,9 @@ void MPCNode::controlLoopCB(const ros::TimerEvent&)
         _twist_msg.angular.z = 0;
         _pub_twist.publish(_twist_msg);
     }
-    
-  
+
+    ROS_INFO("Control Loop Time: %f", (ros::Time::now() - begin).toSec());
+
     /*
     file.open("/home/geonhee/catkin_ws/src/mpc_ros/write.csv");
     string line;

@@ -145,7 +145,7 @@ PurePursuit::PurePursuit()
     odom_sub = n_.subscribe("/odom", 1, &PurePursuit::odomCB, this);
     //path_sub = n_.subscribe("/pure_pursuit/global_planner", 1, &PurePursuit::pathCB, this);
     //goal_sub = n_.subscribe("/pure_pursuit/goal", 1, &PurePursuit::goalCB, this);
-    path_sub = n_.subscribe("/move_base/TrajectoryPlannerROS/global_plan", 1, &PurePursuit::pathCB, this);
+    path_sub = n_.subscribe("/desired_path", 1, &PurePursuit::pathCB, this);
     goal_sub = n_.subscribe("/move_base_simple/goal", 1, &PurePursuit::goalCB, this);
     amcl_sub = n_.subscribe("/amcl_pose", 5, &PurePursuit::amclCB, this);
     marker_pub = n_.advertise<visualization_msgs::Marker>("/pure_pursuit/path_marker", 10);
@@ -231,10 +231,13 @@ void PurePursuit::odomCB(const nav_msgs::Odometry::ConstPtr& odomMsg)
 
 void PurePursuit::pathCB(const nav_msgs::Path::ConstPtr& pathMsg) //jaewan
 {
+    goal_received = true;
+    goal_reached = false;
+
     this->map_path = *pathMsg;
 
     if(goal_received && !goal_reached)
-    {    
+    {
         nav_msgs::Path odom_path = nav_msgs::Path();
         try
         {
@@ -259,7 +262,7 @@ void PurePursuit::pathCB(const nav_msgs::Path::ConstPtr& pathMsg) //jaewan
                 if(sampling == _downSampling)
                 {   
                     geometry_msgs::PoseStamped tempPose;
-                    tf_listener.transformPose(_odom_frame, ros::Time(0) , pathMsg->poses[i], _map_frame, tempPose);                     
+                    tf_listener.transformPose(_odom_frame, ros::Time(0) , pathMsg->poses[i], _odom_frame, tempPose);
                     odom_path.poses.push_back(tempPose);  
                     sampling = 0;
                 }
@@ -378,7 +381,7 @@ double PurePursuit::get_alpha(const geometry_msgs::Pose& carPose)
 
             try
             {
-                tf_listener.transformPose("odom", ros::Time(0) , map_path_pose, "map" ,odom_path_pose);
+                tf_listener.transformPose("odom", ros::Time(0) , map_path_pose, "odom" ,odom_path_pose);
                 odom_path_wayPt = odom_path_pose.pose.position;
                 bool _isForwardWayPt = isForwardWayPt(odom_path_wayPt,carPose);
 

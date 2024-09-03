@@ -24,6 +24,7 @@ id = "odom"
 trajectory_type = ""
 
 current_path_x, current_path_y, current_path_theta = 0, 0, 0
+offset_x, offset_y = 0, 0
 
 def odom_cb(data):
     global odom_path
@@ -33,7 +34,7 @@ def odom_cb(data):
     robot_odom = data
     odom_count = odom_count + 1
 
-    if odom_count % 3 == 0:
+    if odom_count % 1 == 0:
         odom_path.header = data.header
         odom_path.header.frame_id = id
 
@@ -76,7 +77,8 @@ def generation_desired_path():
     '''
     Create desired path
     '''
-    global trajectory_type
+
+    global offset_x, offset_y
     rospy.loginfo("generation_desired_path()")
     
     desired_path = Path()
@@ -214,6 +216,128 @@ def generation_desired_path():
                 pose.pose.orientation.w = q[3]
             desired_path.poses.append(pose)
 
+    # Line Circle Line
+    if trajectory_type == "lcl":
+
+        desired_path.header.frame_id = "odom"
+        desired_path.header.stamp = rospy.Time.now()
+
+        # Parameters
+        l1 = 5.0  # Length of the first line
+        c_r = 1.0  # Radius of the quarter circle
+        l2 = 5.0  # Length of the second line
+        l3 = 5.0  # Length of the third line
+        l4 = 5.0  # Length of the fourth line
+        step_size = 0.01  # Step size for the path points
+
+        # First line
+        x, y = 0.0, 0.0
+        for i in range(int(l1 / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            pose.pose.position.x = x
+            pose.pose.position.y = y
+            q = quaternion_from_euler(0, 0, 0)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+            x += step_size
+
+        # Quarter circle
+        start_angle = -pi/2  # Starting angle for the quarter circle
+        for i in range(int((pi / 2) / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            angle = start_angle + i * step_size
+            pose.pose.position.x = l1 + c_r * cos(angle)
+            pose.pose.position.y = c_r + c_r * sin(angle)
+            q = quaternion_from_euler(0, 0, angle)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+        # Second line
+        for i in range(int(l2 / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            pose.pose.position.x = l1 + c_r
+            pose.pose.position.y = c_r + i * step_size
+            q = quaternion_from_euler(0, 0, pi / 2)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+        # Quarter circle
+        start_angle = 0  # Starting angle for the quarter circle
+        for i in range(int((pi / 2) / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            angle = start_angle + i * step_size
+            pose.pose.position.x = l1 + c_r * cos(angle)
+            pose.pose.position.y = l2 + c_r + c_r * sin(angle)
+            q = quaternion_from_euler(0, 0, angle)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+        # Third line
+        for i in range(int(l3 / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            pose.pose.position.x = l3 - i * step_size
+            pose.pose.position.y = 2*c_r + l2
+            q = quaternion_from_euler(0, 0, pi)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+        # Quarter circle
+        start_angle = pi/2  # Starting angle for the quarter circle
+        for i in range(int((pi / 2) / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            angle = start_angle + i * step_size
+            pose.pose.position.x = c_r * cos(angle)
+            pose.pose.position.y = l2 + c_r + c_r * sin(angle)
+            q = quaternion_from_euler(0, 0, angle)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+        # Fourth line
+        for i in range(int(l4 / step_size)):
+            pose = PoseStamped()
+            pose.header.frame_id = "odom"
+            pose.header.stamp = rospy.Time.now()
+            pose.pose.position.x = -c_r
+            pose.pose.position.y = c_r + l4 - i * step_size
+            q = quaternion_from_euler(0, 0, pi)
+            pose.pose.orientation.x = q[0]
+            pose.pose.orientation.y = q[1]
+            pose.pose.orientation.z = q[2]
+            pose.pose.orientation.w = q[3]
+            desired_path.poses.append(pose)
+
+
+
     desired_path_pub.publish(desired_path) 
     desired_path = []
 
@@ -259,7 +383,7 @@ def find_line_position(path_number, y):
 if __name__ == '__main__':
     rospy.init_node('path_node')
     rospy.loginfo("path_node is started!!")
-    global trajectory_type
+    
     trajectory_type =  rospy.get_param('~trajectory_type')
     odom_sub = rospy.Subscriber('/odom', Odometry, odom_cb)
 

@@ -15,12 +15,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-
+#define HAVE_CSTDDEF
 #include "MPC.h"
 //#include <cppad/cppad.hpp>
 #include <cppad/ipopt/solve.hpp>
 #include <Eigen/Core>
-
+#undef HAVE_CSTDDEF
 // The program use fragments of code from
 // https://github.com/udacity/CarND-MPC-Quizzes
 
