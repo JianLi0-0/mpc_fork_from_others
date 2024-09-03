@@ -1,0 +1,5 @@
+<launch>
+    <node name="MPC_tracking" pkg="mpc_ros" type="tracking_reference_trajectory" output="screen" if="$(eval controller == 'mpc')" >
+        <rosparam file="$(find mpc_ros)/params/mpc_local_square_params.yaml" command="load" />
+    </node>
+</launch>
